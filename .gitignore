@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+.idea/
+
+# Ignore temporary files with ~
+~*.docx
+
+# Ignore temporary files starting with $
+$*.docx
