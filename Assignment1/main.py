@@ -10,7 +10,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
 # local imports
-import part1_neural_network 
+import part1_neural_network
+import part2_decision_trees
 
 RANDOM_SEED = 0
 OUTPUT_DIR = "./results"
@@ -45,9 +46,16 @@ if __name__ == '__main__':
         desired_dataset="breast_cancer", testing_size=0.2, random_seed=RANDOM_SEED)
 
     # run part1
-    part1_output_dir = os.path.join(OUTPUT_DIR, "part1")
-    os.makedirs(part1_output_dir, exist_ok=True)
-    part1_neural_network.train_and_eval(train_data=(X_train, Y_train),
-                                 test_data=(X_test, Y_test),
-                                 random_seed=RANDOM_SEED,
-                                 output_dir=part1_output_dir)
+    #part1_output_dir = os.path.join(OUTPUT_DIR, "part1")
+    #os.makedirs(part1_output_dir, exist_ok=True)
+    #part1_neural_network.train_and_eval(train_data=(X_train, Y_train),
+    #                             test_data=(X_test, Y_test),
+    #                             random_seed=RANDOM_SEED,
+    #                             output_dir=part1_output_dir)
+
+    possible_splits = part2_decision_trees.build_all_possible_splits(X_train)
+
+    decision_tree = part2_decision_trees.build_tree(list(zip(X_train, Y_train)),
+                                                    possible_splits)
+
+    print(decision_tree)
