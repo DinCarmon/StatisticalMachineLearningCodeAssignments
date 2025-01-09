@@ -147,7 +147,6 @@ def build_subtree(root_node : TreeNode,
         root_node.value = int(majority_vote(s))
 
     # Find best split
-    samples_coordinates = [sample[0] for sample in s]
     best_split = None
     best_split_potential_reduction = -np.inf
     for split in a:
@@ -180,7 +179,7 @@ def build_subtree(root_node : TreeNode,
         if len(s_i) > 0:
             # We shall compute the value, i.e. the split name of the child in the future recursive calls
             child_tree = TreeNode(None)
-            build_subtree(child_tree, s_0, a_without_best_split)
+            build_subtree(child_tree, s_i, a_without_best_split)
             root_node.add_child(child_tree)
         else:
             child_tree = TreeNode(m)
