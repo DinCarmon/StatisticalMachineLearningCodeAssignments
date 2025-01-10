@@ -11,135 +11,203 @@ import copy
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-from numpy.lib.format import EXPECTED_KEYS
-
+from typing import Callable, List, Tuple
 
 # Activation functions
 
+def sigmoid(x : np.ndarray[int]):
+    """
+    Compute the sigmoid function, 1 / (1 + exp(-x)).
+    Handles potential overflow issues by try and except.
+    :param x - input, shape (values)
+    """
+    z : np.ndarray = np.zeros(x.shape)
+    for i in range(len(x)):
+        try:
+            z[i] = 1 / (1 + np.exp(-x[i]))
+        except RuntimeWarning:
+            if x[i] > 0:
+                z[i] = 0
+            else:
+                z[i] = 1
 
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
+    return z
 
-# Loss function
+# Loss functions
 
-
-def cross_entropy_loss(Y, X):
+def cross_entropy_loss(correct_label : np.ndarray,
+                       estimated_label : np.ndarray) -> float:
+    """
+    :param correct_label: True labels, shape (samples, 1). The values should be 0 or 1.
+    :param estimated_label: Predicted labels, shape (samples, 1). The values should be between 0 and 1.
+    """
     # Add small epsilon to prevent log(0)
     epsilon = 1e-15
-    X = np.clip(X, epsilon, 1 - epsilon)
-    return -np.mean(Y * np.log(X) + (1 - Y) * np.log(1 - X))
 
+    # check is a smaller epsilon is needed
+    smallest_non_zero = np.min(estimated_label[estimated_label > 0]) if np.any(estimated_label > 0) else None
+    biggest_non_one = np.max(estimated_label[estimated_label < 1]) if np.any(estimated_label < 1) else None
+    if (smallest_non_zero is not None and smallest_non_zero < epsilon) or \
+        (biggest_non_one is not None and biggest_non_one > 1 - epsilon):
+        # Choose an epsilon which is much more extreme than values which are estimated.
+        epsilon = np.min([smallest_non_zero, 1 - biggest_non_one]) * 1e-5
 
-def inference(W, b, X, activation_func=sigmoid):
+    smallest_possible_epsilon = 1e-17
+    if epsilon < smallest_possible_epsilon:
+        # Python cannot handle such small values...
+        epsilon = smallest_possible_epsilon
+
+    estimated_label = np.clip(estimated_label, epsilon, 1 - epsilon)
+
+    # Handle a divide by zero which occurs if epsilon is too small
+    try:
+        return -float(np.mean(correct_label * np.log(estimated_label) + (1 - correct_label) * np.log(1 - estimated_label)))
+    except RuntimeWarning:
+        return np.inf
+
+def forward_pass(W : np.ndarray[int],
+                 b : float,
+                 X : np.ndarray[int, int],
+                 activation_func : Callable = sigmoid) -> np.ndarray[int]:
     """
-    Compute the forward pass of the neural network.
-    W: Weights, shape (features,). we reshape it to (features, 1)
-    b: Bias, shape (1,)
-    X: Input features, shape (samples, features)
-    activation_func: Activation function
-    return A: Predictions, shape (samples, 1)
+    Compute the forward pass of a 1 layer neural network with 1 final perceptron.
+    :param W: Weights, shape: (features,).
+    :param b: Bias
+    :param X: Input features, shape: (samples, features)
+    :param activation_func: Activation function (callable), default: sigmoid(x) = 1 / (1 + exp(-x))
+    :return return A: Predictions, shape (samples, 1)
     """
-    Z = np.dot(X, W.reshape(-1, 1)) + b
-    A = activation_func(Z)
+    Z : np.ndarray = np.dot(X, np.transpose(W)) + b #
+    A : np.ndarray = activation_func(Z)
     return A
 
 
-def get_gradients(X, Y, A,
-                  activation_func=sigmoid,
-                  loss=cross_entropy_loss):
+def get_gradients(X : np.ndarray[int, int],
+                  Y : np.ndarray[int],
+                  Z : np.ndarray[int],
+                  activation_func : Callable = sigmoid,
+                  loss_function : Callable = cross_entropy_loss) -> Tuple[np.ndarray[int], float]:
     """
-    Compute gradients for cross-entropy loss with sigmoid activation.
-    X: input features, shape (samples, features)
-    Y: true labels, shape (samples, 1)
-    A: predictions (after sigmoid), shape (samples, 1)
+    Compute gradients for cross-entropy loss_function with sigmoid activation.
+    :param X: input features, shape (samples, features)
+    :param Y: true labels, shape (samples)
+    :param Z: predictions, shape (samples)
+    :param activation_func: Activation function
+    :param loss_function: Loss function
     """
-    if activation_func == sigmoid and loss == cross_entropy_loss:
-        dZ = A - Y  # Correct derivative for cross-entropy and sigmoid
-        dW = np.dot(X.T, dZ) / X.shape[0]
-        db = np.mean(dZ)
+    if activation_func == sigmoid and loss_function == cross_entropy_loss:
+        # Z lot of calculations yields the following gradient:
+        # l' = -(y * log(x) + (1-y) * log(1-x)) = -(y/x + (y-1)/(1-x)) = - ( y(1-x) + (y-1)x ) / (x(1-x))=
+        #       = (x - y) / (x(1-x))
+        # sigmoid' = ... = sigmoid * (1 - sigmoid)
+        # delta_1 = div_l(z) = (y - z) / (z(1-z))
+        # for w_i: dZ / d(w_i) = l' * sigmoid' * x_i = (y-z) / (z(1-z)) * (z(1-z)) * x_i = (z - y) * x_i
+
+        dZ : np.ndarray[Z.shape] = Z - Y  # Correct derivative for cross-entropy and sigmoid
+
+        # We take the mean of the gradient across the computed gradient for each sample.
+        dW : np.ndarray[X.shape[1]] = np.dot(X.T, dZ) / X.shape[0]
+        db : float = float(np.mean(dZ))
     else:
         raise NotImplementedError(
-            'Only sigmoid activation function is supported')
+            'Only sigmoid activation function and the cross entropy loss is supported')
     return dW, db
 
+MAX_NUM_EPOCHS = 1000
+LEARNING_PATIENCE = 0.9999
+LEARNING_STOP_CRITERIA_NUM_OF_LAST_ROUNDS = 10
+#STOPPING_CONDITION = 'num_epochs'
+STOPPING_CONDITION = 'patience'
 
-def single_layer_nn(train_data, test_data,
-                    W, b,
-                    learning_rate=0.1, num_epochs=1000,
-                    learning_patience=None,
-                    activation_func=sigmoid, loss_func=cross_entropy_loss):
+def single_layer_nn(train_data : Tuple[np.ndarray[int, int], np.ndarray[int]],
+                    test_data : Tuple[np.ndarray[int, int], np.ndarray[int]],
+                    W : np.ndarray[int],
+                    b : float,
+                    learning_rate : float = 0.1,
+                    activation_func : Callable = sigmoid,
+                    loss_func : Callable = cross_entropy_loss,
+                    stopping_condition : str = 'num_epochs'):
     """
-    Train a single layer neural network using gradient descent
-    :param train_data: tuple of X_train, Y_train
-    :param test_data: tuple of X_test, Y_test
-    :param W: Weights
-    :param b: Bias
-    :param learning_rate: Learning rate
-    :param num_epochs: MAX Number of epochs
+    Train a single layer neural network (with 1 output perceptron) using gradient descent
+    :param train_data: tuple of samples (of shape [num of samples, num_of_coordinates]),
+                                labels (of shape [num of samples])
+    :param test_data: tuple of data_test, labels_test
+    :param W: Weights: shape (num_of_coordinates)
+    :param b: Bias : float
+    :param learning_rate: Learning rate. The step taken at each iteration.
     :param activation_func: Activation function
-    :param loss: Loss function
+    :param loss_func: Loss function
+    :param stopping_condition: Stopping condition. Choose either "num_epochs" or "patience"
     """
 
-    X_train, Y_train = train_data
-    X_test, Y_test = test_data
+    (data_train, labels_train) = train_data
+    data_test, labels_test = test_data
 
     # Store metrics
     train_losses = []
     test_losses = []
 
-    not_improved_counter = 0
-    best_test_loss = np.inf
-
     # Train the model
-    for i in range(num_epochs):
+    loss_change_factor_last_rounds = np.ndarray(LEARNING_STOP_CRITERIA_NUM_OF_LAST_ROUNDS)
+    loss_change_factor_last_rounds[:] = -np.inf
+
+    num_of_epoch = 1
+    while True:
         # Forward pass
-        A = inference(W, b, X_train, activation_func)
+        predictions = forward_pass(W, b, data_train
+                        , activation_func)
 
         # Calculate the loss
-        current_loss = loss_func(Y_train, A)
+        current_loss = loss_func(labels_train, predictions)
         train_losses.append(current_loss)
 
         # Backward pass
-        dW, db = get_gradients(X_train, Y_train, A,
-                               activation_func, loss=loss_func)
+        dW, db = get_gradients(data_train
+                    , labels_train, predictions,
+                               activation_func = activation_func,
+                               loss_function = loss_func)
 
         # # Update the weights and bias
-        W -= learning_rate * dW.squeeze()
+        W -= learning_rate * dW
         b -= learning_rate * db
 
-        test_loss = loss_func(Y_test, inference(W, b, X_test, activation_func))
+        test_loss = loss_func(labels_test, forward_pass(W, b, data_test, activation_func))
         test_losses.append(test_loss)
 
-        if learning_patience is not None:
-            if test_loss < best_test_loss:
-                best_test_loss = test_loss
-                not_improved_counter = 0
-            else:
-                not_improved_counter += 1
-                if not_improved_counter >= learning_patience:
-                    break
+        if num_of_epoch > 1:
+            loss_change_factor_last_rounds[:-1] = loss_change_factor_last_rounds[1:]
+            loss_change_factor_last_rounds[-1] = test_losses[-1] / test_losses[-2]
+
+        # Stopping criteria
+        if stopping_condition == 'num_epochs':
+            if num_of_epoch == MAX_NUM_EPOCHS:
+                break
+        elif stopping_condition == 'patience':
+            if loss_change_factor_last_rounds.max() > LEARNING_PATIENCE:
+                break
+        else:
+            raise ValueError('Invalid stopping condition. Choose either "num_epochs" or "patience"')
+
+        num_of_epoch += 1
 
     return W, b, train_losses, test_losses
 
+# hyper-parameters
+EXPERIMENTS_LEARNING_RATES = [0.1, 0.01, 0.001]
+PLOT_EVERY_N_EPOCHS = 10
 
 def train_and_eval(train_data, test_data, random_seed=42,
                    output_dir="./results/part1"):
     """
-    :param train_data: tuple of X_train(n_samples, m_featues), Y_train(n_samples, 1)
-    :param test_data: tuple of X_test(n_samples, m_featues), Y_test(n_samples, 1)
+    :param train_data: tuple of data_train(n_samples, m_featues), labels_train(n_samples, 1)
+    :param test_data: tuple of data_test(n_samples, m_featues), labels_test(n_samples, 1)
     :param random_seed: Random seed
-    return results_dict: {(learning_rate, initialization_type): (W, b, train_losses, test_losses, test_accuracy)}
+    :return results_dict: {(learning_rate, initialization_type): (W, b, train_losses, test_losses, test_accuracy)}
     """
 
-    # hyper-parameters
-    MAX_NUM_EPOCHS = 1000
-    LEARNING_PATIENCE = 100
-    EXPERIMENTS_LEARNING_RATES = [0.1, 0.01, 0.001]
-    PLOT_EVERY_N_EPOCHS = 10
-
-    X_train, Y_train = train_data
-    X_test, Y_test = test_data
-    num_features = X_train.shape[1]
+    data_train, labels_train = train_data
+    data_test, labels_test = test_data
+    num_features = data_train.shape[1]
 
     # Initialize weights and bias
     np.random.seed(random_seed)
@@ -170,16 +238,15 @@ def train_and_eval(train_data, test_data, random_seed=42,
         W = copy.deepcopy(W_init) # deep copy to avoid changing the original weights saved in the dictionary
         b = copy.deepcopy(b_init) 
         W_res, b_res, train_losses, test_losses = single_layer_nn(
-            (X_train, Y_train),
-            (X_test, Y_test),
+            (data_train, labels_train),
+            (data_test, labels_test),
             W, b,
             learning_rate=learning_rate,
-            num_epochs=MAX_NUM_EPOCHS,
-            learning_patience=LEARNING_PATIENCE,
             activation_func=sigmoid,
-            loss_func=cross_entropy_loss
+            loss_func=cross_entropy_loss,
+            stopping_condition=STOPPING_CONDITION
         )
-        test_accuracy = np.mean((inference(W_res, b_res, X_test) > 0.5) == Y_test)
+        test_accuracy = np.mean((forward_pass(W_res, b_res, data_test) > 0.5) == labels_test)
         results_dict[(learning_rate, initialization_type)] = (
             W_res, b_res, train_losses, test_losses, test_accuracy)
 

@@ -53,9 +53,9 @@ class Split:
         return s_0, s_1
 
     def __repr__(self):
-        return f"x[{self.feature_idx}] < {self.threshold}?"
+        return f"x[{self.feature_idx}] < {self.threshold} ?"
 
-def build_all_possible_splits(s : List[np.ndarray]):
+def build_all_possible_splits(s : np.ndarray):
     """
         s - a subset of examples, each example is a tuple (X), where
         X is a numpy array of features
@@ -100,9 +100,10 @@ class TreeNode:
 
     def __repr__(self, level=0):
         """String representation of the tree for visualization."""
-        ret = " " * (2 * level) + repr(self.value) + "\n"
-        for child in self.children:
-            ret += child.__repr__(level + 1)
+        ret = repr(self.value) + "\n"
+        if not self.is_leaf:
+            ret += " " * (2 * level + 1) + "No: " + self.children[0].__repr__(level + 1)
+            ret += " " * (2 * level + 1) + "Yes: " + self.children[1].__repr__(level + 1)
         return ret
 
 def compute_positive_ratio(s : List[Tuple[np.ndarray, int]]):
@@ -199,3 +200,11 @@ def build_tree(s : List[Tuple[np.ndarray, int]],
     root_node = TreeNode(None)
     build_subtree(root_node, s, a)
     return root_node
+
+def compute_accuracy(root_node : TreeNode,
+                     s : List[Tuple[np.ndarray, int]]):
+    correct_predictions = 0
+    for sample in s:
+        if root_node(sample[0]) == sample[1]:
+            correct_predictions += 1
+    return correct_predictions / len(s)
