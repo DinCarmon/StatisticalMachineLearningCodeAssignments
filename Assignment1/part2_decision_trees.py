@@ -29,7 +29,12 @@ class Split:
         """
         Compute the label of the split function on X.
         """
-        return X[self.feature_idx] < self.threshold
+        if type(self.threshold) == float or type(self.threshold) == int or type(self.threshold) == np.float64:
+            return X[self.feature_idx] < self.threshold
+        elif type(self.threshold) == str:
+            return X[self.feature_idx] == self.threshold
+        else:
+            raise ValueError("threshold must be a float or a string")
 
     def do_split(self, s : List):
         """
@@ -38,7 +43,6 @@ class Split:
         """
         s_0 = []
         s_1 = []
-
 
         for i in range(len(s)):
             if type(s[i]) == tuple:
@@ -64,9 +68,16 @@ def build_all_possible_splits(s : np.ndarray):
 
     for index in range(s[0].shape[0]):
         possible_values = [sample[index] for sample in s]
+
         for threshold in np.unique(possible_values):
             sp = Split(index, threshold)
             splits.append(sp)
+
+        if (possible_values[0] is not None and
+            (type(possible_values[0]) == float or
+             type(possible_values[0]) == int)):
+            above_all_value = np.max(possible_values) + 1
+            splits.append(Split(index, above_all_value))
     return splits
 
 class TreeNode:

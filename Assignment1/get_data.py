@@ -1,3 +1,11 @@
+# Introduction to Machine Learning course - Code Assignment 1
+# Authors: Tal Grossman, Amir Sharif Jamal, Din Carmon:
+# Tal Grossman      201512282
+# Amir Sharif Jamal 213850811
+# Din Carmon        209325026
+
+# Data retrieval
+
 from typing import Any
 import numpy as np
 from sklearn.preprocessing import StandardScaler

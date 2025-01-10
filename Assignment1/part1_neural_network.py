@@ -194,14 +194,17 @@ def single_layer_nn(train_data : Tuple[np.ndarray[int, int], np.ndarray[int]],
 
 # hyper-parameters
 EXPERIMENTS_LEARNING_RATES = [0.1, 0.01, 0.001]
-PLOT_EVERY_N_EPOCHS = 10
 
-def train_and_eval(train_data, test_data, random_seed=42,
-                   output_dir="./results/part1"):
+def train(train_data : Tuple[np.ndarray[int, int], np.ndarray[int]],
+          test_data : Tuple[np.ndarray[int, int], np.ndarray[int]],
+          random_seed=42):
     """
-    :param train_data: tuple of data_train(n_samples, m_featues), labels_train(n_samples, 1)
-    :param test_data: tuple of data_test(n_samples, m_featues), labels_test(n_samples, 1)
-    :param random_seed: Random seed
+    :param train_data: tuple of samples (of shape [num of samples, num_of_coordinates]),
+                                labels (of shape [num of samples])
+    :param test_data: tuple of samples (of shape [num of samples, num_of_coordinates]),
+                                labels (of shape [num of samples])
+    :param random_seed: Random seed. If not None, random generated values are reproducible,
+                                        with different calls to this function.
     :return results_dict: {(learning_rate, initialization_type): (W, b, train_losses, test_losses, test_accuracy)}
     """
 
@@ -210,52 +213,69 @@ def train_and_eval(train_data, test_data, random_seed=42,
     num_features = data_train.shape[1]
 
     # Initialize weights and bias
-    np.random.seed(random_seed)
+    if random_seed is not None:
+        np.random.seed(random_seed)
     # He initialization: references:
     # https://arxiv.org/abs/1502.01852
     # https://medium.com/@shauryagoel/kaiming-he-initialization-a8d9ed0b5899
-    W_he = np.random.randn(num_features) * np.sqrt(2. /
+    W_he_initialization = np.random.randn(num_features) * np.sqrt(2. /
                                                    num_features)  # He initialization
-    b_he = np.zeros(1)  # Initialize bias to zero
+    b_he_initialization = np.zeros(1)  # Initialize bias to zero
 
     # normal initialization
-    W_normal = np.random.randn(num_features)  # Normal initialization
-    b_normal = np.zeros(1)  # Initialize bias to zero
+    W_normal_initialization = np.random.randn(num_features)  # Normal initialization
+    b_normal_initialization = np.zeros(1)  # Initialize bias to zero
 
     # initialization experiments
     init_exps = {
-        'He Initialization': (W_he, b_he),
-        'Normal Initialization': (W_normal, b_normal)
+        'He Initialization': (W_he_initialization, b_he_initialization),
+        'Normal Initialization': (W_normal_initialization, b_normal_initialization)
     }
 
     # list of all experiments as grid - i.e all combinations of learning rates and initializations
     all_experiments = [(lr, init) for lr in EXPERIMENTS_LEARNING_RATES for init in init_exps.items()]
 
     # results dict structure: {(learning_rate, initialization_type): (W, b, train_losses, test_losses, test_accuracy)}
-    results_dict = {} 
+    results_dict = {}
     # run the experiments
     for learning_rate, (initialization_type, (W_init, b_init)) in all_experiments:
-        W = copy.deepcopy(W_init) # deep copy to avoid changing the original weights saved in the dictionary
-        b = copy.deepcopy(b_init) 
+        W = copy.deepcopy(W_init)  # deep copy to avoid changing the original weights saved in the dictionary
+        b = copy.deepcopy(b_init)
         W_res, b_res, train_losses, test_losses = single_layer_nn(
             (data_train, labels_train),
             (data_test, labels_test),
             W, b,
-            learning_rate=learning_rate,
-            activation_func=sigmoid,
-            loss_func=cross_entropy_loss,
-            stopping_condition=STOPPING_CONDITION
+            learning_rate = learning_rate,
+            activation_func = sigmoid,
+            loss_func = cross_entropy_loss,
+            stopping_condition = STOPPING_CONDITION
         )
         test_accuracy = np.mean((forward_pass(W_res, b_res, data_test) > 0.5) == labels_test)
         results_dict[(learning_rate, initialization_type)] = (
             W_res, b_res, train_losses, test_losses, test_accuracy)
 
+    return results_dict
+
+PLOT_EVERY_N_EPOCHS = 10
+
+def visualize_results(results_dict : dict,
+                      output_dir="./results/part1",
+                      show_graphs = False):
+    """
+    :param results_dict: {(learning_rate, initialization_type): (W, b, train_losses, test_losses, test_accuracy)}
+                Expects all combinations of learning rates and initializations to be present in the dictionary.
+    :param output_dir: Directory where the plots will be saved.
+    """
+    learning_rates = np.unique([run_configuration[0] for run_configuration in results_dict.keys()])
+    initialization_types = np.unique([run_configuration[1] for run_configuration in results_dict.keys()])
+    num_of_different_configurations_rates = len(results_dict.keys())
+
     # plot all experiments results
     fig, axs = plt.subplots(
-        len(EXPERIMENTS_LEARNING_RATES), len(init_exps), figsize=(15, 10))
+        len(learning_rates), len(initialization_types), figsize=(15, 10))
     fig.suptitle('Experiments Results')
-    for i, learning_rate in enumerate(EXPERIMENTS_LEARNING_RATES):
-        for j, initialization_type in enumerate(init_exps.keys()):
+    for i, learning_rate in enumerate(learning_rates):
+        for j, initialization_type in enumerate(initialization_types):
             W, b, train_losses, test_losses, test_accuracy = results_dict[(
                 learning_rate, initialization_type)]
             final_train_loss = train_losses[-1]
@@ -271,10 +291,11 @@ def train_and_eval(train_data, test_data, random_seed=42,
             axs[i, j].legend(loc='upper right', title=f'Test Accuracy: {test_accuracy:.3f}')
             
     plt.tight_layout()
-    plt.show()
+    if show_graphs:
+        plt.show()
     # save plots
-    expiriments_plots_path = os.path.join(output_dir, "experiments_plots.png")
-    fig.savefig(expiriments_plots_path)
+    experiments_plots_path = os.path.join(output_dir, "experiments_plots.png")
+    fig.savefig(experiments_plots_path)
 
     # plot the best model by taking the model with the final lowest test loss
     best_model = min(results_dict.items(), key=lambda x: x[1][3][-1])
@@ -292,7 +313,8 @@ def train_and_eval(train_data, test_data, random_seed=42,
     ax.set_ylabel('Loss')
     ax.legend(loc='upper right', title=f'Test Accuracy: {best_test_accuracy:.3f}')
     plt.tight_layout()
-    plt.show()
+    if show_graphs:
+        plt.show()
     # save plot
     best_model_plot_path = os.path.join(output_dir, "best_model_plot.png")
     fig.savefig(best_model_plot_path)
@@ -301,6 +323,7 @@ def train_and_eval(train_data, test_data, random_seed=42,
     with open(best_weights_path, 'w') as f:
         json.dump({"W": best_W.tolist(), "b": best_b.tolist()}, f)
 
-
+    print("Graphs + Best 1 layer NN configuration were saved to: " + output_dir)
+    print(f"Best configuration 1 layer NN accuracy: {best_test_accuracy}\n")
 
     return results_dict
